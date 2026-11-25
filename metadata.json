@@ -1,0 +1,6 @@
+{
+  "name": "FabLab 3D: Silicon Floorplanner",
+  "description": "Interactive 3D and WebXR chip design game where you drag-and-drop CMOS logic cells onto a silicon wafer die to master floorplanning, signal timing, and PPA optimization with a Silicon Copilot.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

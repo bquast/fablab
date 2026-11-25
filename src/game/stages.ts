@@ -1,0 +1,161 @@
+import { ChipStage, GateSpec, GateType } from './types';
+
+export const DIE_COLS = 6;
+export const DIE_ROWS = 6;
+
+export const GATE_SPECS: Record<GateType, GateSpec> = {
+  NOT: {
+    type: 'NOT',
+    label: 'NOT',
+    roleHint: 'CMOS Inverter · ¬A',
+    booleanExpr: 'Y = ¬A',
+    inputs: 1,
+    intrinsicDelayPs: 15,
+    switchingPowerMw: 0.22,
+    transistorCount: 2,
+    accentHex: '#0ea5e9',
+  },
+  BUF: {
+    type: 'BUF',
+    label: 'BUF',
+    roleHint: 'Repeater Buffer · Cuts RC Delay',
+    booleanExpr: 'Y = A',
+    inputs: 1,
+    intrinsicDelayPs: 12,
+    switchingPowerMw: 0.25,
+    transistorCount: 4,
+    accentHex: '#10b981',
+  },
+  NAND2: {
+    type: 'NAND2',
+    label: 'NAND2',
+    roleHint: 'Universal CMOS Gate · ¬(A·B)',
+    booleanExpr: 'Y = ¬(A · B)',
+    inputs: 2,
+    intrinsicDelayPs: 22,
+    switchingPowerMw: 0.34,
+    transistorCount: 4,
+    accentHex: '#f59e0b',
+  },
+  AND2: {
+    type: 'AND2',
+    label: 'AND2',
+    roleHint: 'Conjunction Cell · A·B',
+    booleanExpr: 'Y = A · B',
+    inputs: 2,
+    intrinsicDelayPs: 34,
+    switchingPowerMw: 0.52,
+    transistorCount: 6,
+    accentHex: '#8b5cf6',
+  },
+  OR2: {
+    type: 'OR2',
+    label: 'OR2',
+    roleHint: 'Disjunction Cell · A+B',
+    booleanExpr: 'Y = A + B',
+    inputs: 2,
+    intrinsicDelayPs: 36,
+    switchingPowerMw: 0.54,
+    transistorCount: 6,
+    accentHex: '#ec4899',
+  },
+  XOR2: {
+    type: 'XOR2',
+    label: 'XOR2',
+    roleHint: 'Parity / Sum Cell · A⊕B',
+    booleanExpr: 'Y = A ⊕ B',
+    inputs: 2,
+    intrinsicDelayPs: 42,
+    switchingPowerMw: 0.72,
+    transistorCount: 8,
+    accentHex: '#06b6d4',
+  },
+};
+
+export const POC_STAGES: ChipStage[] = [
+  {
+    id: 'cmos-inverter-rc',
+    index: 0,
+    code: '01',
+    title: '01. CMOS Inverter & Wire RC Delay',
+    subtitle: 'Place a 2-transistor NOT cell and balance Metal-1 interconnect length',
+    goalSummary: 'Invert IN_A to OUT_Y (Y = ¬A) with Critical Path <= 85 ps',
+    conceptCallout:
+      'Long unbuffered copper traces suffer quadratic Elmore RC delay. Center your NOT cell along Row 2 (around Col 2–3) to split the interconnect in half.',
+    availableGates: ['NOT', 'BUF'],
+    inputPads: [{ id: 'IN_A', label: 'IN_A', side: 'west', col: -1, row: 2 }],
+    outputPads: [{ id: 'OUT_Y', label: 'OUT_Y', side: 'east', col: 6, row: 2 }],
+    truthTable: [
+      { inputs: { IN_A: 0 }, expected: { OUT_Y: 1 } },
+      { inputs: { IN_A: 1 }, expected: { OUT_Y: 0 } },
+    ],
+    targetDelayPs: 85,
+    powerBudgetMw: 1.0,
+    copilotPrompts: [
+      'Why does centering the NOT gate cut critical path delay?',
+      'Where should I place cells to pass 85 ps timing?',
+      'Explain CMOS PMOS pull-up vs NMOS pull-down.',
+    ],
+  },
+  {
+    id: 'nand-invert-synthesis',
+    index: 1,
+    code: '02',
+    title: '02. Universal NAND2 + NOT Synthesis',
+    subtitle: 'Synthesize AND logic using pure CMOS NAND2 followed by an Inverter',
+    goalSummary: 'Build OUT_Y = A · B using NAND2 -> NOT (West-to-East flow) <= 125 ps',
+    conceptCallout:
+      'In real silicon, there is no single-stage CMOS AND gate: designers chain a 4-transistor NAND2 (West) into a 2-transistor NOT (East) for faster switching.',
+    availableGates: ['NAND2', 'NOT', 'BUF'],
+    inputPads: [
+      { id: 'IN_A', label: 'IN_A', side: 'west', col: -1, row: 1 },
+      { id: 'IN_B', label: 'IN_B', side: 'west', col: -1, row: 4 },
+    ],
+    outputPads: [{ id: 'OUT_Y', label: 'OUT_Y', side: 'east', col: 6, row: 2 }],
+    truthTable: [
+      { inputs: { IN_A: 0, IN_B: 0 }, expected: { OUT_Y: 0 } },
+      { inputs: { IN_A: 0, IN_B: 1 }, expected: { OUT_Y: 0 } },
+      { inputs: { IN_A: 1, IN_B: 0 }, expected: { OUT_Y: 0 } },
+      { inputs: { IN_A: 1, IN_B: 1 }, expected: { OUT_Y: 1 } },
+    ],
+    targetDelayPs: 125,
+    powerBudgetMw: 1.5,
+    copilotPrompts: [
+      'How do I wire NAND2 into NOT on this West-to-East grid?',
+      'Why is NAND2 + NOT preferred over native AND in CMOS?',
+      'Review my current die placement and wirelength.',
+    ],
+  },
+  {
+    id: 'half-adder-tapeout',
+    index: 2,
+    code: '03',
+    title: '03. 1-Bit Half-Adder Die Tape-Out',
+    subtitle: 'Floorplan parallel SUM (A⊕B) and CARRY (A·B) datapaths with balanced skew',
+    goalSummary: 'Verify SUM & CARRY (4/4 vectors) within <= 140 ps and <= 2.20 mW',
+    conceptCallout:
+      'Align XOR2 near the SUM pad row (Row 1) and AND2 near the CARRY pad row (Row 4) at the same column so both tap IN_A & IN_B without cross-die congestion.',
+    availableGates: ['XOR2', 'AND2', 'NAND2', 'NOT', 'OR2', 'BUF'],
+    inputPads: [
+      { id: 'IN_A', label: 'IN_A', side: 'west', col: -1, row: 1 },
+      { id: 'IN_B', label: 'IN_B', side: 'west', col: -1, row: 4 },
+    ],
+    outputPads: [
+      { id: 'SUM', label: 'SUM', side: 'east', col: 6, row: 1 },
+      { id: 'CARRY', label: 'CARRY', side: 'east', col: 6, row: 4 },
+    ],
+    truthTable: [
+      { inputs: { IN_A: 0, IN_B: 0 }, expected: { SUM: 0, CARRY: 0 } },
+      { inputs: { IN_A: 0, IN_B: 1 }, expected: { SUM: 1, CARRY: 0 } },
+      { inputs: { IN_A: 1, IN_B: 0 }, expected: { SUM: 1, CARRY: 0 } },
+      { inputs: { IN_A: 1, IN_B: 1 }, expected: { SUM: 0, CARRY: 1 } },
+    ],
+    targetDelayPs: 140,
+    powerBudgetMw: 2.2,
+    copilotPrompts: [
+      'How should I floorplan XOR2 and AND2 to avoid pad routing swaps?',
+      'Can I beat AND2 timing using NAND2 + NOT for CARRY?',
+      'Analyze my Half-Adder PPA score and timing slack.',
+    ],
+  },
+];
